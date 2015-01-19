@@ -62,17 +62,6 @@
   :keymap (make-sparse-keymap)
   :after-hook (evil-normal-state))
 
-(defgroup evil-lispy nil
-  "Customization options for evil-lispy, a mode for integrating Evil and Lispy."
-  :prefix "evil-lispy-"
-  :group 'lispy)
-
-(defcustom evil-lispy-use-enhanced-keys-in-lispy-state t
-  "If t, override some Lispy keys.  Defaults to t.  If nil, lispy state will
-be exactly the same as standard Lispy.  Refer to lispy docs for keymap."
-  :type 'boolean
-  :group 'evil-lispy)
-
 
 ;; ——— Helpers —————————————————————————————————————————————————————————————————
 
@@ -111,10 +100,6 @@ is balanced."
          (looking-back "\\[")) t)
    ((and (looking-at "\}")
          (looking-back "\{")) t)))
-
-(defun evil-lispy--next-characters (n)
-  (let* ((range (list (point) (+ n (point)))))
-    (buffer-substring-no-properties (car range) (cadr range))))
 
 
 ;; ——— State ———————————————————————————————————————————————————————————————————
@@ -255,26 +240,6 @@ we are deleting an empty list."
   (evil-backward-char 1 nil t)
   (evil-insert-state))
 
-(defun evil-lispy--alter-sexp-left ()
-  "Move bound of sexp left"
-  (interactive)
-  (if (looking-at lispy-left)
-      (lispy-slurp 1)
-    (lispy-barf 1)))
-
-(defun evil-lispy--alter-sexp-right ()
-  "Move bound of sexp right"
-  (interactive)
-  (if (looking-at lispy-left)
-      (lispy-barf 1)
-    (lispy-slurp 1)))
-
-(defun evil-lispy--kill-then-move ()
-  "Kills, then moves, so point remains special."
-  (interactive)
-  (lispy-kill)
-  (lispy-backward 1))
-
 
 ;; ——— Non-special map —————————————————————————————————————————————————————————
 (let ((map evil-lispy-mode-map))
@@ -319,14 +284,7 @@ we are deleting an empty list."
 
 ;; ——— Special map —————————————————————————————————————————————————————————————
 (setq evil-lispy-state-map (copy-keymap lispy-mode-map))
-(define-key evil-lispy-state-map (kbd "C-g") 'evil-lispy--exit-state)
-(define-key evil-lispy-state-map [escape] (kbd "C-g"))
-
-(when evil-lispy-use-enhanced-keys-in-lispy-state
-  (let ((map evil-lispy-state-map))
-    (define-key map (kbd "D") 'evil-lispy--kill-then-move)
-    (define-key map (kbd "X") 'lispy-delete)
-    (define-key map (kbd ".") 'repeat)))
+(define-key evil-lispy-state-map (kbd "<escape>") 'evil-lispy--exit-state)
 
 (provide 'evil-lispy)
 
