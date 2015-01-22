@@ -3,7 +3,7 @@ evil-lispy
 
 A minor mode and Evil state for editing Lisp code with Lispy.
 
-This is a brand-new package, more documentation to come.
+**I'm not actively maintaining this! Fork and take it over!**
 
 
 Credits
