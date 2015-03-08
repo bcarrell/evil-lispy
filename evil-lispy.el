@@ -1,6 +1,6 @@
 ;;; evil-lispy.el --- Lispy for Evil Mode
 
-;; Copyright (C) 2014 Brandon Carrell
+;; Copyright (C) 2015 Brandon Carrell
 
 ;; Author: Brandon Carrell <brandoncarrell@gmail.com>
 ;; URL: https://github.com/bcarrell/evil-lispy
@@ -25,7 +25,7 @@
 ;;; Commentary:
 ;;
 ;; evil-lispy defines a minor mode and an additional Evil state for editing
-;; Lisp code.  The goal is to encourage a workflow where you can hop into
+;; Lisp code.  The goal is to encourage a workflow where you can hop between
 ;; Lispy State for making structured edits using Lispy bindings and the rest
 ;; of the standard Evil states for general editing.  Where it makes sense,
 ;; this package redefines a few Lispy bindings, which can be turned on or off
@@ -44,247 +44,109 @@
 ;; ) will hop to the right paren and activate Lispy state
 ;; ( will hop to the left paren and activate Lispy state
 ;; gv will mark the current symbol and activate Lispy state
-;; << will hop to the beginning of the current defun and activate Lispy state
-;; >> will hop to the end of the current defun and activate Lispy state
 
-;; Once in Lispy state, use C-g or ESC to return to Normal mode.
+;; Once in Lispy state, use ESC to return to Normal mode.
 
 ;;; Code:
 
 (require 'evil)
 (require 'lispy)
 
-;; ——— Mode ————————————————————————————————————————————————————————————————————
-
-(define-minor-mode evil-lispy-mode
-  "A minor mode for integrating Evil and Lispy."
-  :lighter " eLY"
-  :keymap (make-sparse-keymap)
-  :after-hook (evil-normal-state))
-
-
-;; ——— Helpers —————————————————————————————————————————————————————————————————
-
-(defun evil-lispy--in-special-p ()
-  (cond
-   ((looking-at lispy-left) t)
-   ((looking-back lispy-right) t)
-   (t nil)))
-
-(defun evil-lispy--balanced-p (start end)
-  "Predicate to check if a range contains balanced boundaries.
-Useful for checking if a delete will break balance.  Returns t if start -> end
-is balanced."
-  (condition-case condition
-      (let ((s (buffer-substring-no-properties start end)))
-        (with-temp-buffer
-          (insert s)
-          (check-parens))
-        t)
-    (error nil)))
-
-(defun evil-lispy--looking-at-empty-p ()
-  "Predicate that checks if we're looking at an empty form."
-  (cond
-   ((looking-at "()") t)
-   ((looking-at "\\[\\]") t)
-   ((looking-at "\\{\\}") t)
-   (t nil)))
-
-(defun evil-lispy--inside-empty-p ()
-  "Predicate that checks if we're inside an empty form in normal mode."
-  (cond
-   ((and (looking-at "\)")
-         (looking-back "\(")) t)
-   ((and (looking-at "\\]")
-         (looking-back "\\[")) t)
-   ((and (looking-at "\}")
-         (looking-back "\{")) t)))
-
+(put 'evil-define-state 'lisp-indent-function 'defun)
 
 ;; ——— State ———————————————————————————————————————————————————————————————————
 
 (evil-define-state lispy
   "An evil state for Lispy, a precision editing mode for Lisp."
-  :tag "<LISP>"
+  :tag "<L>"
+  :message "Entering Lispy state!"
   :cursor ("red" box)
   :suppress-keymap t
+  :entry-hook (evil-lispy-state-entry)
+  :exit-hook (evil-lispy-state-exit)
+  nil)
 
-  ;; When in Lispy state, don't use Evil visual mode
-  (if (evil-lispy-state-p)
-      (remove-hook 'activate-mark-hook 'evil-visual-activate-hook t)
-    (add-hook 'activate-mark-hook 'evil-visual-activate-hook nil t)))
+(defun evil-lispy-state-entry ()
+  (remove-hook 'activate-mark-hook #'evil-visual-activate-hook t)
+  (lispy-mode 1))
 
-;; Enter state
-(defun evil-lispy--enter-state-right ()
-  "Enter lispy state on the right bound of the form."
-  (interactive)
-  (unless (evil-lispy--in-special-p)
-    (lispy-out-forward 1))
-  (evil-lispy-state))
+(defun evil-lispy-state-exit ()
+  (when (region-active-p) (deactivate-mark))
+  (add-hook 'activate-mark-hook #'evil-visual-activate-hook nil t)
+  (lispy-mode -1))
 
-(defun evil-lispy--enter-state-left ()
-  "Enter lispy state on the left bound of the form."
-  (interactive)
-  (unless (evil-lispy--in-special-p)
-    (lispy-out-backward 1))
-  (evil-lispy-state))
+(defun evil-lispy-enter-state (direction)
+  (let ((f (intern (concat "lispy-" (symbol-name direction)))))
+    `(lambda ()
+       (interactive)
+       (,f 1)
+       (evil-lispy-state))))
 
-(defun evil-lispy--enter-state-with-symbol-marked ()
-  "Enter lispy state with a mark."
+(fset 'evil-lispy-enter-state-left (evil-lispy-enter-state 'left))
+(fset 'evil-lispy-enter-state-right (evil-lispy-enter-state 'right))
+
+(defun evil-lispy-enter-marked-state ()
   (interactive)
   (evil-lispy-state)
   (lispy-mark-symbol))
 
-(defun evil-lispy--enter-state-at-beginning-of-defun ()
+
+;; ——— Mode ————————————————————————————————————————————————————————————————————
+
+(define-minor-mode evil-lispy-mode
+  "A minor mode for integrating Evil and Lispy."
+  :lighter " evil-lispy"
+  :keymap (make-sparse-keymap)
+  :after-hook (evil-normal-state))
+
+
+;; ——— Operations ——————————————————————————————————————————————————————————————
+
+(defun evil-lispy--copy-n-characters (arg)
+  "Copy `arg' characters from point.  `arg' is a number."
+  (let ((s (buffer-substring-no-properties (point) (+ arg (point)))))
+    (kill-new s)))
+
+(advice-add #'lispy-delete :before #'evil-lispy--copy-n-characters)
+
+(defun evil-lispy-reverse-delete (arg)
+  "Evil X key.  Deletes `arg' characters backwards."
   (interactive)
-  (lispy-beginning-of-defun)
-  (evil-lispy-state))
-
-(defun evil-lispy--enter-state-at-end-of-defun ()
-  (interactive)
-  (lispy-beginning-of-defun)
-  (lispy-different)
-  (evil-lispy-state))
-
-;; Exit state
-(defun evil-lispy--exit-state ()
-  (interactive)
-  (if (region-active-p)
-      (deactivate-mark)
-    (deactivate-mark)
-    (evil-normal-state)))
+  (goto-char (- (point) arg))
+  (lispy-delete arg))
 
 
-;; ——— Safe editing fns ————————————————————————————————————————————————————————
+;; ——— Keys ————————————————————————————————————————————————————————————————————
 
-(defun evil-lispy--check-unbalanced-op-p (&rest arg)
-  "Given an Evil operator arg, check the range to see if this operation will
-result in an unbalanced buffer.  Used with :before-while advice to block
-the operation entirely if this returns nil."
-  (let ((start (car arg))
-        (end (cadr arg)))
-    (cond
-     ((evil-lispy--looking-at-empty-p) arg)
-     ((evil-lispy--balanced-p start end) arg)
-     (t nil))))
-
-(defun evil-lispy--delete-additional (&rest arg)
-  "Given an Evil operator ARG, modify the range to include the empty list if
-we are deleting an empty list."
-  (let* ((arg (car arg))
-         (start (car arg))
-         (end (cadr arg)))
-    (cond
-     ((evil-lispy--looking-at-empty-p)
-      (progn
-        (setcar (nthcdr 1 arg) (1+ end))
-        arg))
-     ((evil-lispy--inside-empty-p)
-      (progn
-        (setcar (nthcdr 0 arg) (1- start))
-        arg))
-     (t arg))))
+(define-key evil-lispy-state-map [escape] 'evil-normal-state)
+(define-key evil-lispy-state-map (kbd "C-f") 'evil-normal-state)
+(define-key evil-lispy-state-map (kbd "C-p") 'evil-normal-state)
+(define-key evil-lispy-state-map (kbd "C-n") 'evil-normal-state)
+(define-key evil-lispy-state-map (kbd "C-b") 'evil-normal-state)
 
 
-;; ——— x key ———————————————————————————————————————————————————————————————————
-(advice-add 'evil-delete-char :before-while #'evil-lispy--check-unbalanced-op-p)
-(advice-add 'evil-delete-char :filter-args #'evil-lispy--delete-additional)
+;; ——— Entering state ——————————————————————————————————————————————————————————
 
-;; ——— X key ———————————————————————————————————————————————————————————————————
-(advice-add 'evil-delete-backward-char :before-while #'evil-lispy--check-unbalanced-op-p)
-(advice-add 'evil-delete-backward-char :filter-args #'evil-lispy--delete-additional)
+(evil-define-key 'normal evil-lispy-mode-map
+  "(" #'evil-lispy-enter-state-left
+  ")" #'evil-lispy-enter-state-right
+  "gv" #'evil-lispy-enter-marked-state)
 
-;; ——— d key ———————————————————————————————————————————————————————————————————
-(advice-add 'evil-delete :before-while #'evil-lispy--check-unbalanced-op-p)
+(evil-define-key 'normal evil-lispy-mode-map
+  "D" #'lispy-kill
+  "x" #'lispy-delete
+  "X" #'evil-lispy-reverse-delete
+  "M-k" #'lispy-kill-sentence)
 
-;; ——— y key ———————————————————————————————————————————————————————————————————
-(advice-add 'evil-yank :before-while #'evil-lispy--check-unbalanced-op-p)
-
-
-;; ——— Text objects ————————————————————————————————————————————————————————————
-
-(defun evil-lispy--bounds ()
-  "Returns the current bounds."
-  (or (lispy--bounds-comment)
-      (lispy--bounds-string)
-      (lispy--bounds-list)))
-
-(evil-define-text-object evil-lispy--outer-form-object (&optional count beg end type)
-  (let ((bounds (evil-lispy--bounds)))
-    (when bounds
-      (evil-range (car bounds) (cdr bounds)))))
-
-(evil-define-text-object evil-lispy--inner-form-object (&optional count beg end type)
-  (let ((bounds (evil-lispy--bounds)))
-    (when bounds
-      (evil-range (1+ (car bounds)) (1- (cdr bounds))))))
-
-
-;; ——— Editing functions ———————————————————————————————————————————————————————
-
-(defun evil-lispy--end-insert ()
-  "Moves to the end of the form and enters insert mode."
-  (interactive)
-  (lispy-out-forward 1)
-  (backward-char 1)
-  (evil-insert-state))
-
-(defun evil-lispy--beg-insert ()
-  "Moves to the beginning of the form and enters insert mode.  Inserts
-  an additional space."
-  (interactive)
-  (lispy-out-backward 1)
-  (evil-forward-char 1 nil t)
-  (insert-char ?\s)
-  (evil-backward-char 1 nil t)
-  (evil-insert-state))
-
-
-;; ——— Non-special map —————————————————————————————————————————————————————————
-(let ((map evil-lispy-mode-map))
-
-  (define-key evil-inner-text-objects-map "f" 'evil-lispy--inner-form-object)
-  (define-key evil-outer-text-objects-map "f" 'evil-lispy--outer-form-object)
-
-  (local-unset-key (kbd ">"))
-  (local-unset-key (kbd "<"))
-
-  ;; ——— Entering Lispy state ——————————————————————————————————————————————————
-  (evil-define-key 'normal map
-    ")"  'evil-lispy--enter-state-right
-    "("  'evil-lispy--enter-state-left
-    "gv" 'evil-lispy--enter-state-with-symbol-marked
-    "<<" 'evil-lispy--enter-state-at-beginning-of-defun
-    ">>" 'evil-lispy--enter-state-at-end-of-defun)
-
-  ;; ——— Insert mode maps ——————————————————————————————————————————————————————
-  (evil-define-key 'insert map
-    "(" 'lispy-parens
-    ")" 'lispy-out-forward-nostring
-    "[" 'lispy-brackets
-    "]" 'lispy-out-forward-nostring
-    "{" 'lispy-braces
-    "}" 'lispy-out-forward-nostring
-    "\"" 'lispy-quotes
-    (kbd "DEL") 'lispy-delete-backward
-    (kbd "C-1") 'lispy-describe-inline
-    (kbd "C-2") 'lispy-arglist-inline)
-
-  ;; ——— Normal mode maps ——————————————————————————————————————————————————————
-  (evil-define-key 'normal map
-    "C" (kbd "cif")
-    "Y" (kbd "yaf")
-    "D" 'lispy-kill
-    ">i" 'evil-lispy--end-insert
-    "<i" 'evil-lispy--beg-insert
-    (kbd "C-1") 'lispy-describe-inline
-    (kbd "C-2") 'lispy-arglist-inline))
-
-
-;; ——— Special map —————————————————————————————————————————————————————————————
-(setq evil-lispy-state-map (copy-keymap lispy-mode-map))
-(define-key evil-lispy-state-map (kbd "<escape>") 'evil-lispy--exit-state)
+(evil-define-key 'insert evil-lispy-mode-map
+  "(" #'lispy-parens
+  "[" #'lispy-brackets
+  "{" #'lispy-braces
+  ")" #'lispy-right-nostring
+  "\"" #'lispy-quotes
+  (kbd "DEL") #'lispy-delete-backward
+  (kbd "C-1") #'lispy-describe-inline
+  (kbd "C-2") #'lispy-arglist-inline)
 
 (provide 'evil-lispy)
 
