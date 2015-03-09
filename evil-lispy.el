@@ -43,6 +43,8 @@
 ;;
 ;; ) will hop to the right paren and activate Lispy state
 ;; ( will hop to the left paren and activate Lispy state
+;; >i will hop to the right paren and activate Lispy state
+;; <i will hop to the left paren and activate Lispy state
 ;; gv will mark the current symbol and activate Lispy state
 
 ;; Once in Lispy state, use ESC to return to Normal mode.
@@ -94,6 +96,16 @@ the current form.  DIRECTION must be either 'left or 'right."
   (evil-lispy-state)
   (lispy-mark-symbol))
 
+(defun evil-lispy-enter-visual-state ()
+  "If we're in visual state, enter `lispy-state' with the current region
+selected."
+  (interactive)
+  (let ((start (region-beginning))
+        (end (region-end))
+        (pos (point)))
+    (evil-lispy-state)
+    (set-mark (if (eq pos start) end start))))
+
 (defun evil-lispy-enter-insert-state (direction)
   "Return a lambda which enters Insert state at the DIRECTION side of
 the current form.  DIRECTION must be either 'left or 'right."
@@ -117,7 +129,6 @@ the current form.  DIRECTION must be either 'left or 'right."
 (fset 'evil-lispy-enter-insert-state-right
       (evil-lispy-enter-insert-state 'right))
 
-
 ;; ——— Mode ————————————————————————————————————————————————————————————————————
 
 (define-minor-mode evil-lispy-mode
@@ -126,8 +137,46 @@ the current form.  DIRECTION must be either 'left or 'right."
   :keymap (make-sparse-keymap)
   :after-hook (evil-normal-state))
 
+;; ——— Text objects ————————————————————————————————————————————————————————————
+
+(evil-define-text-object evil-lispy--outer-form-object (&optional count beg end type)
+  (let ((bounds (lispy--bounds-list)))
+    (when bounds
+      (evil-range (car bounds) (cdr bounds)))))
+
+(evil-define-text-object evil-lispy--inner-form-object (&optional count beg end type)
+  (let ((bounds (lispy--bounds-list)))
+    (evil-range (1+ (car bounds)) (1- (cdr bounds)))))
+
+(define-key evil-inner-text-objects-map "f" 'evil-lispy--inner-form-object)
+(define-key evil-outer-text-objects-map "f" 'evil-lispy--outer-form-object)
 
 ;; ——— Operations ——————————————————————————————————————————————————————————————
+
+(defun evil-lispy--balanced-p (start end)
+  "Predicate to check if a range contains balanced boundaries.
+Useful for checking if a delete will break balance.  Returns t if start -> end
+is balanced."
+  (condition-case condition
+      (let ((s (buffer-substring-no-properties start end)))
+        (with-temp-buffer
+          (insert s)
+          (check-parens))
+        t)
+    (error nil)))
+
+(defun evil-lispy--check-unbalanced-op-p (&rest arg)
+  "Given an Evil operator arg, check the range to see if this operation will
+result in an unbalanced buffer.  Used with :before-while advice to block
+the operation entirely if this returns nil."
+  (let ((start (car arg))
+        (end (cadr arg)))
+    (cond
+     ((evil-lispy--balanced-p start end) arg)
+     (t nil))))
+
+(advice-add #'evil-delete :before-while #'evil-lispy--check-unbalanced-op-p)
+(advice-add #'evil-yank :before-while #'evil-lispy--check-unbalanced-op-p)
 
 (defun evil-lispy--copy-n-characters (arg)
   "Copy `arg' characters from point.  `arg' is a number."
@@ -142,6 +191,16 @@ the current form.  DIRECTION must be either 'left or 'right."
   (goto-char (- (point) arg))
   (lispy-delete arg))
 
+(defun evil-lispy-kill-then-insert ()
+  (interactive)
+  (lispy-kill)
+  (evil-insert-state))
+
+(defun evil-lispy-describe ()
+  (interactive)
+  (save-excursion
+    (lispy-mark-symbol)
+    (lispy-describe-inline)))
 
 ;; ——— Keys ————————————————————————————————————————————————————————————————————
 
@@ -151,9 +210,7 @@ the current form.  DIRECTION must be either 'left or 'right."
 (define-key evil-lispy-state-map (kbd "C-n") 'evil-normal-state)
 (define-key evil-lispy-state-map (kbd "C-b") 'evil-normal-state)
 
-
-;; ——— Entering state ——————————————————————————————————————————————————————————
-
+;; ——— Entering state ——————————————————
 (evil-define-key 'normal evil-lispy-mode-map
   "(" #'evil-lispy-enter-state-left
   ")" #'evil-lispy-enter-state-right
@@ -163,12 +220,21 @@ the current form.  DIRECTION must be either 'left or 'right."
   ">i" #'evil-lispy-enter-insert-state-right
   ">I" #'evil-lispy-enter-insert-state-right)
 
+(evil-define-key 'visual evil-lispy-mode-map
+  (kbd "RET") #'evil-lispy-enter-visual-state)
+
+;; ——— Editing operations ——————————————
 (evil-define-key 'normal evil-lispy-mode-map
   "D" #'lispy-kill
+  "C" #'evil-lispy-kill-then-insert
   "x" #'lispy-delete
   "X" #'evil-lispy-reverse-delete
-  "M-k" #'lispy-kill-sentence)
+  (kbd "M-k") #'lispy-kill-sentence
+  "K" #'evil-lispy-describe
+  (kbd "C-1") #'evil-lispy-describe
+  (kbd "C-2") #'lispy-arglist-inline)
 
+;; ——— Insert operations ———————————————
 (evil-define-key 'insert evil-lispy-mode-map
   "(" #'lispy-parens
   "[" #'lispy-brackets
