@@ -76,9 +76,12 @@
   (lispy-mode -1))
 
 (defun evil-lispy-enter-state (direction)
+  "Return a lambda which enters Lispy state at the DIRECTION side of
+the current form.  DIRECTION must be either 'left or 'right."
   (let ((f (intern (concat "lispy-" (symbol-name direction)))))
     `(lambda ()
        (interactive)
+       (when (looking-at lispy-left) (forward-char))
        (,f 1)
        (evil-lispy-state))))
 
@@ -86,9 +89,33 @@
 (fset 'evil-lispy-enter-state-right (evil-lispy-enter-state 'right))
 
 (defun evil-lispy-enter-marked-state ()
+  "Enters `lispy-state' with the current symbol under point marked."
   (interactive)
   (evil-lispy-state)
   (lispy-mark-symbol))
+
+(defun evil-lispy-enter-insert-state (direction)
+  "Return a lambda which enters Insert state at the DIRECTION side of
+the current form.  DIRECTION must be either 'left or 'right."
+  `(lambda ()
+     (interactive)
+     (funcall (evil-lispy-enter-state ',direction))
+     (evil-insert-state)
+     (cond
+      ((eq ',direction 'left)
+       (forward-char)
+       (unless (looking-at "\s")
+         (insert ?\s)
+         (backward-char)))
+      ((eq ',direction 'right)
+       (backward-char)
+       (unless (looking-back "\s")
+         (insert ?\s))))))
+
+(fset 'evil-lispy-enter-insert-state-left
+      (evil-lispy-enter-insert-state 'left))
+(fset 'evil-lispy-enter-insert-state-right
+      (evil-lispy-enter-insert-state 'right))
 
 
 ;; ——— Mode ————————————————————————————————————————————————————————————————————
@@ -111,7 +138,7 @@
 
 (defun evil-lispy-reverse-delete (arg)
   "Evil X key.  Deletes `arg' characters backwards."
-  (interactive)
+  (interactive "p")
   (goto-char (- (point) arg))
   (lispy-delete arg))
 
@@ -130,7 +157,11 @@
 (evil-define-key 'normal evil-lispy-mode-map
   "(" #'evil-lispy-enter-state-left
   ")" #'evil-lispy-enter-state-right
-  "gv" #'evil-lispy-enter-marked-state)
+  "gv" #'evil-lispy-enter-marked-state
+  "<i" #'evil-lispy-enter-insert-state-left
+  "<I" #'evil-lispy-enter-insert-state-left
+  ">i" #'evil-lispy-enter-insert-state-right
+  ">I" #'evil-lispy-enter-insert-state-right)
 
 (evil-define-key 'normal evil-lispy-mode-map
   "D" #'lispy-kill
