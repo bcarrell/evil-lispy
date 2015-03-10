@@ -229,8 +229,8 @@ the operation entirely if this returns nil."
   "C" #'evil-lispy-kill-then-insert
   "x" #'lispy-delete
   "X" #'evil-lispy-reverse-delete
-  (kbd "M-k") #'lispy-kill-sentence
   "K" #'evil-lispy-describe
+  (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'evil-lispy-describe
   (kbd "C-2") #'lispy-arglist-inline)
 
