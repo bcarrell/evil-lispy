@@ -242,6 +242,7 @@ the operation entirely if this returns nil."
   ")" #'lispy-right-nostring
   "\"" #'lispy-quotes
   (kbd "DEL") #'lispy-delete-backward
+  (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'lispy-describe-inline
   (kbd "C-2") #'lispy-arglist-inline)
 
