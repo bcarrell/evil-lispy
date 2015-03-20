@@ -169,19 +169,21 @@ is balanced."
   "Given an Evil operator arg, check the range to see if this operation will
 result in an unbalanced buffer.  Used with :before-while advice to block
 the operation entirely if this returns nil."
-  (let ((start (car arg))
-        (end (cadr arg)))
-    (cond
-     ((evil-lispy--balanced-p start end) arg)
-     (t nil))))
+  (when (and (boundp 'evil-lispy-mode) evil-lispy-mode)
+    (let ((start (car arg))
+          (end (cadr arg)))
+      (cond
+       ((evil-lispy--balanced-p start end) arg)
+       (t nil)))))
 
 (advice-add #'evil-delete :before-while #'evil-lispy--check-unbalanced-op-p)
 (advice-add #'evil-yank :before-while #'evil-lispy--check-unbalanced-op-p)
 
 (defun evil-lispy--copy-n-characters (arg)
   "Copy `arg' characters from point.  `arg' is a number."
-  (let ((s (buffer-substring-no-properties (point) (+ arg (point)))))
-    (kill-new s)))
+  (when (and (boundp 'evil-lispy-mode) evil-lispy-mode)
+    (let ((s (buffer-substring-no-properties (point) (+ arg (point)))))
+      (kill-new s))))
 
 (advice-add #'lispy-delete :before #'evil-lispy--copy-n-characters)
 
