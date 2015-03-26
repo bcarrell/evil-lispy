@@ -169,12 +169,13 @@ is balanced."
   "Given an Evil operator arg, check the range to see if this operation will
 result in an unbalanced buffer.  Used with :before-while advice to block
 the operation entirely if this returns nil."
-  (when (bound-and-true-p evil-lispy-mode)
-    (let ((start (car arg))
-          (end (cadr arg)))
-      (cond
-       ((evil-lispy--balanced-p start end) arg)
-       (t nil)))))
+  (if (bound-and-true-p evil-lispy-mode)
+      (let ((start (car arg))
+            (end (cadr arg)))
+        (cond
+         ((evil-lispy--balanced-p start end) arg)
+         (t nil)))
+    t))
 
 (advice-add #'evil-delete :before-while #'evil-lispy--check-unbalanced-op-p)
 (advice-add #'evil-yank :before-while #'evil-lispy--check-unbalanced-op-p)
