@@ -77,18 +77,21 @@
   (add-hook 'activate-mark-hook #'evil-visual-activate-hook nil t)
   (lispy-mode -1))
 
-(defun evil-lispy-enter-state (direction)
+(defun evil-lispy-enter-state (direction extra-direction)
   "Return a lambda which enters Lispy state at the DIRECTION side of
 the current form.  DIRECTION must be either 'left or 'right."
-  (let ((f (intern (concat "lispy-" (symbol-name direction)))))
+  (let ((f (intern (concat "lispy-" (symbol-name direction))))
+        (g (intern (concat "lispy-" (symbol-name extra-direction)))))
     `(lambda ()
        (interactive)
        (when (looking-at lispy-left) (forward-char))
-       (,f 1)
+       (let ((pos (point)))
+         (,f 1)
+         (when (eq (point) pos) (,g 1)))
        (evil-lispy-state))))
 
-(fset 'evil-lispy-enter-state-left (evil-lispy-enter-state 'left))
-(fset 'evil-lispy-enter-state-right (evil-lispy-enter-state 'right))
+(fset 'evil-lispy-enter-state-left (evil-lispy-enter-state 'left 'backward))
+(fset 'evil-lispy-enter-state-right (evil-lispy-enter-state 'right 'forward))
 
 (defun evil-lispy-enter-marked-state ()
   "Enters `lispy-state' with the current symbol under point marked."
