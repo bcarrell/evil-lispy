@@ -109,12 +109,12 @@ selected."
     (evil-lispy-state)
     (set-mark (if (eq pos start) end start))))
 
-(defun evil-lispy-enter-insert-state (direction)
+(defun evil-lispy-enter-insert-state (direction extra-direction)
   "Return a lambda which enters Insert state at the DIRECTION side of
 the current form.  DIRECTION must be either 'left or 'right."
   `(lambda ()
      (interactive)
-     (funcall (evil-lispy-enter-state ',direction))
+     (funcall (evil-lispy-enter-state ',direction ',extra-direction))
      (evil-insert-state)
      (cond
       ((eq ',direction 'left)
@@ -128,9 +128,9 @@ the current form.  DIRECTION must be either 'left or 'right."
          (insert ?\s))))))
 
 (fset 'evil-lispy-enter-insert-state-left
-      (evil-lispy-enter-insert-state 'left))
+      (evil-lispy-enter-insert-state 'left 'backward))
 (fset 'evil-lispy-enter-insert-state-right
-      (evil-lispy-enter-insert-state 'right))
+      (evil-lispy-enter-insert-state 'right 'forward))
 
 ;; ——— Mode ————————————————————————————————————————————————————————————————————
 
