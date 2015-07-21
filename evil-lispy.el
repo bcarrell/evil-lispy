@@ -169,6 +169,18 @@ the current form.  DIRECTION must be either 'left or 'right."
   (buffer-substring-no-properties (line-beginning-position)
                                   (line-end-position)))
 
+(defun evil-lispy--balanced-p (start end)
+  "Predicate to check if a range contains balanced boundaries.
+Useful for checking if a delete will break balance.  Returns t if start -> end
+is balanced."
+  (condition-case condition
+      (let ((s (buffer-substring-no-properties start end)))
+        (with-temp-buffer
+          (insert s)
+          (check-parens))
+        t)
+    (error nil)))
+
 (defun evil-lispy--line-deletion-bounds ()
   "Return a pair of positions representing the bounds of a line deletion."
   (let* ((line (evil-lispy--current-line-string))
@@ -182,6 +194,54 @@ the current form.  DIRECTION must be either 'left or 'right."
                                (length (evil-lispy--current-line-string))))))
     (cons (point) (+ (point) chars-to-delete))))
 
+(defun evil-lispy--reconcile-bounds (req-bnds bnds)
+  (let ((req-beg (car req-bnds))
+        (req-end (cdr req-bnds))
+        (bnds-beg (1+ (car bnds)))
+        (bnds-end (1- (cdr bnds))))
+    (cons (if (< req-beg bnds-beg)
+              bnds-beg
+            req-beg)
+          (if (> req-end bnds-end)
+              bnds-end
+            req-end))))
+
+(evil-define-operator evil-lispy-delete (beg end type reg yank-handler)
+  "A balanced version of `evil-delete'."
+  (interactive "<R><x>")
+  (let ((req-bnds (cons beg end))
+        (l-bnds (lispy--bounds-list))
+        (s-bnds (lispy--bounds-string)))
+    (bc/debug req-bnds)
+    (bc/debug l-bnds)
+    (bc/debug s-bnds)
+    (if (or (= end beg) (evil-lispy--balanced-p beg end))
+        (evil-delete beg end type reg yank-handler)
+      (if (or s-bnds l-bnds)
+          (let ((bnds (evil-lispy--reconcile-bounds req-bnds (or s-bnds l-bnds))))
+            (evil-delete (car bnds)
+                         (cdr bnds)
+                         type
+                         reg
+                         yank-handler))
+        (error "evil-lispy-delete: Couldn't reconcile bounds of unbalanced operation")))))
+
+(evil-define-operator evil-lispy-change (beg end type reg yank-handler)
+  "A balanced version of `evil-delete'."
+  (interactive "<R><x>")
+  (let ((req-bnds (cons beg end))
+        (l-bnds (lispy--bounds-list))
+        (s-bnds (lispy--bounds-string)))
+    (if (or (= end beg) (evil-lispy--balanced-p beg end))
+        (evil-change beg end type reg yank-handler)
+      (if (or s-bnds l-bnds)
+          (let ((bnds (evil-lispy--reconcile-bounds req-bnds (or s-bnds l-bnds))))
+            (evil-change (car bnds)
+                         (cdr bnds)
+                         type
+                         reg
+                         yank-handler))
+        (error "evil-lispy-change: Couldn't reconcile bounds of unbalanced operation")))))
 
 (evil-define-operator evil-lispy-change-line (beg end type reg yank-handler)
   "Delete to end of line using `lispy-kill' and change to `evil-insert-state'."
@@ -227,6 +287,8 @@ the current form.  DIRECTION must be either 'left or 'right."
 (evil-define-key 'normal evil-lispy-mode-map
   "D" #'evil-lispy-delete-line
   "C" #'evil-lispy-change-line
+  "d" #'evil-lispy-delete
+  "c" #'evil-lispy-change
   "K" #'evil-lispy-describe
   (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'evil-lispy-describe
