@@ -156,52 +156,6 @@ the current form.  DIRECTION must be either 'left or 'right."
 
 ;; ——— Operations ——————————————————————————————————————————————————————————————
 
-(defun evil-lispy--balanced-p (start end)
-  "Predicate to check if a range contains balanced boundaries.
-Useful for checking if a delete will break balance.  Returns t if start -> end
-is balanced."
-  (condition-case condition
-      (let ((s (buffer-substring-no-properties start end)))
-        (with-temp-buffer
-          (insert s)
-          (check-parens))
-        t)
-    (error nil)))
-
-(defun evil-lispy--check-unbalanced-op-p (&rest arg)
-  "Given an Evil operator arg, check the range to see if this operation will
-result in an unbalanced buffer.  Used with :before-while advice to block
-the operation entirely if this returns nil."
-  (if (bound-and-true-p evil-lispy-mode)
-      (let ((start (car arg))
-            (end (cadr arg)))
-        (cond
-         ((evil-lispy--balanced-p start end) arg)
-         (t nil)))
-    t))
-
-(advice-add #'evil-delete :before-while #'evil-lispy--check-unbalanced-op-p)
-(advice-add #'evil-yank :before-while #'evil-lispy--check-unbalanced-op-p)
-
-(defun evil-lispy--copy-n-characters (arg)
-  "Copy `arg' characters from point.  `arg' is a number."
-  (when (bound-and-true-p evil-lispy-mode)
-    (let ((s (buffer-substring-no-properties (point) (+ arg (point)))))
-      (kill-new s))))
-
-(advice-add #'lispy-delete :before #'evil-lispy--copy-n-characters)
-
-(defun evil-lispy-reverse-delete (arg)
-  "Evil X key.  Deletes `arg' characters backwards."
-  (interactive "p")
-  (goto-char (- (point) arg))
-  (lispy-delete arg))
-
-(defun evil-lispy-kill-then-insert ()
-  (interactive)
-  (lispy-kill)
-  (evil-insert-state))
-
 (defun evil-lispy-describe ()
   (interactive)
   (save-excursion
@@ -211,10 +165,6 @@ the operation entirely if this returns nil."
 ;; ——— Keys ————————————————————————————————————————————————————————————————————
 
 (define-key evil-lispy-state-map [escape] 'evil-normal-state)
-(define-key evil-lispy-state-map (kbd "C-f") 'evil-normal-state)
-(define-key evil-lispy-state-map (kbd "C-p") 'evil-normal-state)
-(define-key evil-lispy-state-map (kbd "C-n") 'evil-normal-state)
-(define-key evil-lispy-state-map (kbd "C-b") 'evil-normal-state)
 
 ;; ——— Entering state ——————————————————
 (evil-define-key 'normal evil-lispy-mode-map
@@ -232,9 +182,6 @@ the operation entirely if this returns nil."
 ;; ——— Editing operations ——————————————
 (evil-define-key 'normal evil-lispy-mode-map
   "D" #'lispy-kill
-  "C" #'evil-lispy-kill-then-insert
-  "x" #'lispy-delete
-  "X" #'evil-lispy-reverse-delete
   "K" #'evil-lispy-describe
   (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'evil-lispy-describe
