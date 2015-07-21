@@ -1,4 +1,4 @@
-;;; evil-lispy.el --- Lispy for Evil Mode
+;;; evil-lispy.evil Mode
 
 ;; Copyright (C) 2015 Brandon Carrell
 
@@ -162,6 +162,50 @@ the current form.  DIRECTION must be either 'left or 'right."
     (lispy-mark-symbol)
     (lispy-describe-inline)))
 
+
+;; ——— Operators ———————————————————————————————————————————————————————————————
+
+(defun evil-lispy--current-line-string ()
+  (buffer-substring-no-properties (line-beginning-position)
+                                  (line-end-position)))
+
+(defun evil-lispy--line-deletion-bounds ()
+  "Return a pair of positions representing the bounds of a line deletion."
+  (let* ((line (evil-lispy--current-line-string))
+         (line-length (length line))
+         (curpos (current-column))
+         (chars-to-delete (with-temp-buffer
+                            (insert line)
+                            (move-to-column curpos)
+                            (lispy-kill)
+                            (- line-length
+                               (length (evil-lispy--current-line-string))))))
+    (cons (point) (+ (point) chars-to-delete))))
+
+
+(evil-define-operator evil-lispy-change-line (beg end type reg yank-handler)
+  "Delete to end of line using `lispy-kill' and change to `evil-insert-state'."
+  :motion nil
+  (interactive "<R><x>")
+  (let ((bnds (evil-lispy--line-deletion-bounds)))
+    (evil-change (car bnds)
+                 (cdr bnds)
+                 type
+                 reg
+                 yank-handler)))
+
+(evil-define-operator evil-lispy-delete-line (beg end type reg yank-handler)
+  "Delete to end of line using `lispy-kill'."
+  :motion nil
+  (interactive "<R><x>")
+  (let ((bnds (evil-lispy--line-deletion-bounds)))
+    (evil-delete (car bnds)
+                 (cdr bnds)
+                 type
+                 reg
+                 yank-handler)))
+
+
 ;; ——— Keys ————————————————————————————————————————————————————————————————————
 
 (define-key evil-lispy-state-map [escape] 'evil-normal-state)
@@ -181,7 +225,8 @@ the current form.  DIRECTION must be either 'left or 'right."
 
 ;; ——— Editing operations ——————————————
 (evil-define-key 'normal evil-lispy-mode-map
-  "D" #'lispy-kill
+  "D" #'evil-lispy-delete-line
+  "C" #'evil-lispy-change-line
   "K" #'evil-lispy-describe
   (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'evil-lispy-describe
