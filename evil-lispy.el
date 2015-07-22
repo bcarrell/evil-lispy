@@ -56,6 +56,20 @@
 
 (put 'evil-define-state 'lisp-indent-function 'defun)
 
+;; ——— Customization ———————————————————————————————————————————————————————————
+
+(defgroup evil-lispy nil
+  "Evil integration with Lispy."
+  :group 'lispy)
+
+(defcustom evil-lispy-modified-operators t
+  "Set to t to use the `evil-lispy' versions of Vim operators like d, c, y, D,
+etc.  These provide a safe version that should respect the balance of the
+buffer."
+  :group 'evil-lispy
+  :type 'boolean)
+
+
 ;; ——— State ———————————————————————————————————————————————————————————————————
 
 (evil-define-state lispy
@@ -134,10 +148,12 @@ the current form.  DIRECTION must be either 'left or 'right."
 
 ;; ——— Mode ————————————————————————————————————————————————————————————————————
 
+(defvar evil-lispy-mode-map (make-sparse-keymap))
+
 (define-minor-mode evil-lispy-mode
   "A minor mode for integrating Evil and Lispy."
   :lighter " evil-lispy"
-  :keymap (make-sparse-keymap)
+  :keymap evil-lispy-mode-map
   :after-hook (evil-normal-state))
 
 ;; ——— Text objects ————————————————————————————————————————————————————————————
@@ -161,7 +177,6 @@ the current form.  DIRECTION must be either 'left or 'right."
   (save-excursion
     (lispy-mark-symbol)
     (lispy-describe-inline)))
-
 
 ;; ——— Operators ———————————————————————————————————————————————————————————————
 
@@ -206,39 +221,70 @@ is balanced."
               bnds-end
             req-end))))
 
-(evil-define-operator evil-lispy-delete (beg end type reg yank-handler)
-  "A balanced version of `evil-delete'."
-  (interactive "<R><x>")
-  (let ((req-bnds (cons beg end))
-        (l-bnds (lispy--bounds-list))
-        (s-bnds (lispy--bounds-string)))
-    (if (or (= end beg) (evil-lispy--balanced-p beg end))
-        (evil-delete beg end type reg yank-handler)
-      (if (or s-bnds l-bnds)
-          (let ((bnds (evil-lispy--reconcile-bounds req-bnds (or s-bnds l-bnds))))
-            (evil-delete (car bnds)
-                         (cdr bnds)
-                         type
-                         reg
-                         yank-handler))
-        (error "evil-lispy-delete: Couldn't reconcile bounds of unbalanced operation")))))
+(defun evil-lispy--safe-operator (op orig beg end type reg yank-handler)
+  "Wrapper for creating safe variants of Evil operations."
+  (let* ((bnd-op (if (lispy--in-string-p)
+                     #'lispy--bounds-string
+                   #'lispy--bounds-list))
+         (cur-bnds (save-excursion
+                     (goto-char orig)
+                     (funcall bnd-op))))
+    (cond
+     ;; We're not changing anything or the operation is balanced
+     ((or (= end beg) (evil-lispy--balanced-p beg end))
+      (funcall op beg end type reg yank-handler))
 
-(evil-define-operator evil-lispy-change (beg end type reg yank-handler)
+     ;; We're not in a form and it's unbalanced
+     ((null cur-bnds)
+      (error "Couldn't reconcile bounds of unbalanced operation"))
+
+     ;; Destination is in another form or string
+     ;; We could refuse the operation, but let's try massaging it
+     ;; and accomplish something, even if it's not the entire
+     ;; request
+     (t
+      (let* ((revised-beg (save-excursion
+                            (goto-char beg)
+                            (cl-loop until
+                                     (equal cur-bnds (funcall bnd-op))
+                                     do
+                                     (forward-char)
+                                     finally return
+                                     (if (eq type 'line)
+                                         (point)
+                                       (1+ (point))))))
+             (revised-end (save-excursion
+                            (goto-char end)
+                            (cl-loop until
+                                     (equal cur-bnds (funcall bnd-op))
+                                     do
+                                     (backward-char)
+                                     finally return
+                                     (if (> end orig)
+                                         (1+ (point))
+                                       (point))))))
+        (funcall op
+                 revised-beg
+                 revised-end
+                 type
+                 reg
+                 yank-handler)
+        (goto-char revised-beg))))))
+
+(evil-define-operator evil-lispy-delete (beg end type reg yank-handler orig)
   "A balanced version of `evil-delete'."
-  (interactive "<R><x>")
-  (let ((req-bnds (cons beg end))
-        (l-bnds (lispy--bounds-list))
-        (s-bnds (lispy--bounds-string)))
-    (if (or (= end beg) (evil-lispy--balanced-p beg end))
-        (evil-change beg end type reg yank-handler)
-      (if (or s-bnds l-bnds)
-          (let ((bnds (evil-lispy--reconcile-bounds req-bnds (or s-bnds l-bnds))))
-            (evil-change (car bnds)
-                         (cdr bnds)
-                         type
-                         reg
-                         yank-handler))
-        (error "evil-lispy-change: Couldn't reconcile bounds of unbalanced operation")))))
+  (interactive "<R><x><y>" (list (point)))
+  (evil-lispy--safe-operator #'evil-delete orig beg end type reg yank-handler))
+
+(evil-define-operator evil-lispy-yank (beg end type reg yank-handler orig)
+  "A balanced version of `evil-yank'."
+  (interactive "<R><x><y>" (list (point)))
+  (evil-lispy--safe-operator #'evil-yank orig beg end type reg yank-handler))
+
+(evil-define-operator evil-lispy-change (beg end type reg yank-handler orig)
+  "A balanced version of `evil-change'."
+  (interactive "<R><x><y>" (list (point)))
+  (evil-lispy--safe-operator #'evil-change orig beg end type reg yank-handler))
 
 (evil-define-operator evil-lispy-change-line (beg end type reg yank-handler)
   "Delete to end of line using `lispy-kill' and change to `evil-insert-state'."
@@ -262,6 +308,18 @@ is balanced."
                  reg
                  yank-handler)))
 
+(evil-define-operator evil-lispy-yank-line (beg end type reg yank-handler)
+  "Safe yank to end of line."
+  :motion nil
+  :move-point nil
+  (interactive "<R><x>")
+  (let ((bnds (evil-lispy--line-deletion-bounds)))
+    (evil-yank (car bnds)
+               (cdr bnds)
+               type
+               reg
+               yank-handler)))
+
 
 ;; ——— Keys ————————————————————————————————————————————————————————————————————
 
@@ -281,11 +339,16 @@ is balanced."
   (kbd "RET") #'evil-lispy-enter-visual-state)
 
 ;; ——— Editing operations ——————————————
+(when evil-lispy-modified-operators
+  (evil-define-key 'normal evil-lispy-mode-map
+    "D" #'evil-lispy-delete-line
+    "C" #'evil-lispy-change-line
+    "Y" #'evil-lispy-yank-line
+    "d" #'evil-lispy-delete
+    "c" #'evil-lispy-change
+    "y" #'evil-lispy-yank))
+
 (evil-define-key 'normal evil-lispy-mode-map
-  "D" #'evil-lispy-delete-line
-  "C" #'evil-lispy-change-line
-  "d" #'evil-lispy-delete
-  "c" #'evil-lispy-change
   "K" #'evil-lispy-describe
   (kbd "M-k") #'lispy-kill-sentence
   (kbd "C-1") #'evil-lispy-describe
