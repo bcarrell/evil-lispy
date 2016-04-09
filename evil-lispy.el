@@ -1,9 +1,9 @@
-;;; evil-lispy.evil Mode
+;;; evil-lispy.el --- precision Lisp editing with Evil and Lispy
 
 ;; Copyright (C) 2015 Brandon Carrell
 
-;; Author: Brandon Carrell <brandoncarrell@gmail.com>
-;; URL: https://github.com/bcarrell/evil-lispy
+;; Author: Brandon Carrell <brandoncarrell@gmail.com>, Mika Vilpas <mika.vilpas@gmail.com>
+;; URL: https://github.com/sp3ctum/evil-lispy
 ;; Version: 0.0.1
 ;; Keywords: lisp
 
